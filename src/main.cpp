@@ -26,6 +26,25 @@ bool initSDL()
 
 
 /**
+ * Callback that receives a debug message from Vulkan
+ */
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+	VkDebugReportFlagsEXT flags,
+	VkDebugReportObjectTypeEXT objType,
+	uint64_t obj,
+	size_t location,
+	int32_t code,
+	const char* layerPrefix,
+	const char* msg,
+	void* userData) 
+{
+
+	std::cerr << "validation layer: " << msg << std::endl;
+	return VK_FALSE;
+}
+
+
+/**
  * Creates a vulkan instance using all the available instance extensions and layers
  * @return if the instance was created successfully
  */
@@ -56,6 +75,9 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	}
 	std::cout << "\n";
 
+	// Add debug display extension, we need this to relay debug messages
+	ext_names.emplace_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+
 	// Figure out the amount of available layers
 	// Layers are used for debugging / validation etc / profiling..
 	unsigned int instance_layer_count = 0;
@@ -66,7 +88,7 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	// Display layer names
 	std::cout << "instance layers:\n";
 	std::vector<const char*> valid_instance_layer_names;
-	instance_layer_count = 0;
+	int count(0);
 	for (const auto& name : instance_layer_names)
 	{
 		// skip trace, causes vulkan initialization to fail: https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/2471
@@ -78,9 +100,9 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 		if(lname == "VK_LAYER_LUNARG_api_dump")
 			continue;
 
-		std::cout << instance_layer_count << ": " << name.layerName << ": " << name.description << "\n";
+		std::cout << count << ": " << name.layerName << ": " << name.description << "\n";
 		valid_instance_layer_names.emplace_back(name.layerName);
-		instance_layer_count++;
+		count++;
 	}
 	std::cout << "\n";
 
@@ -104,9 +126,9 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	inst_info.pNext = NULL;
 	inst_info.flags = 0;
 	inst_info.pApplicationInfo = &app_info;
-	inst_info.enabledExtensionCount = ext_count;
+	inst_info.enabledExtensionCount = static_cast<uint32_t>(ext_names.size());
 	inst_info.ppEnabledExtensionNames = ext_names.data();
-	inst_info.enabledLayerCount = instance_layer_count;
+	inst_info.enabledLayerCount = static_cast<uint32_t>(valid_instance_layer_names.size());
 	inst_info.ppEnabledLayerNames = valid_instance_layer_names.data();
 
 	// Create vulkan runtime instance
