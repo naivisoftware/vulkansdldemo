@@ -64,14 +64,23 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	vkEnumerateInstanceLayerProperties(&instance_layer_count, instance_layer_names.data());
 
 	// Display layer names
-	std::cout << "found " << instance_layer_count << " Vulkan instance layers:\n";
+	std::cout << "instance layers:\n";
 	std::vector<const char*> valid_instance_layer_names;
-	int count(0);
+	instance_layer_count = 0;
 	for (const auto& name : instance_layer_names)
 	{
-		std::cout << count << ": " << name.layerName << ": " << name.description << "\n";
+		// skip trace, causes vulkan initialization to fail: https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/2471
+		std::string lname(name.layerName);
+		if(lname == "VK_LAYER_LUNARG_vktrace")
+			continue;
+		
+		// Skip API dump layer as well, don't need that debug output info
+		if(lname == "VK_LAYER_LUNARG_api_dump")
+			continue;
+
+		std::cout << instance_layer_count << ": " << name.layerName << ": " << name.description << "\n";
 		valid_instance_layer_names.emplace_back(name.layerName);
-		count++;
+		instance_layer_count++;
 	}
 	std::cout << "\n";
 
