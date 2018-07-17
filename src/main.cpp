@@ -87,7 +87,7 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	app_info.applicationVersion = 1;
 	app_info.pEngineName = gEngineName;
 	app_info.engineVersion = 1;
-	app_info.apiVersion = api_version;
+	app_info.apiVersion = VK_API_VERSION_1_0;
 
 	// initialize the VkInstanceCreateInfo structure
 	VkInstanceCreateInfo inst_info = {};
@@ -147,6 +147,7 @@ bool selectGPU(VkInstance& instance, VkPhysicalDevice& outDevice, unsigned int& 
 	{
 		vkGetPhysicalDeviceProperties(physical_device, &(physical_device_properties[count]));
 		std::cout << count << ": " << physical_device_properties[count].deviceName << "\n";
+		count++;
 	}
 
 	// Select one if more than 1 is available
