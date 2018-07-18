@@ -1,4 +1,4 @@
-Vulkan SDL Demo {#mainpage}
+Vulkan SDL Integration Demo
 =======================
 
 # Description
