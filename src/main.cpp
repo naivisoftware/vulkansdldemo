@@ -12,6 +12,13 @@ const char				gEngineName[] = "VulkanDemoEngine";
 int						gWindowWidth = 512;
 int						gWindowHeight = 512;
 
+/**
+ * This demo attempts to create a window and vulkan compatible surface using SDL
+ * Verified and tested using multiple CPUs under windows.
+ * Should work on every other SDL / Vulkan supported operating system (OSX, Linux, Android)
+ * main() clearly outlines all the specific steps taken to create a vulkan instance,
+ * select a device, create a vulkan compatible surface (opaque) associated with a window.
+ */
 
 /**
  *	@return the set of layers to be initialized with Vulkan
@@ -185,7 +192,7 @@ bool getAvailableVulkanExtensions(SDL_Window* window, std::vector<std::string>& 
  * Creates a vulkan instance using all the available instance extensions and layers
  * @return if the instance was created successfully
  */
-bool createVulkanInstance(SDL_Window* window, const std::vector<std::string>& layerNames, const std::vector<std::string>& extensionNames, VkInstance& outInstance)
+bool createVulkanInstance(const std::vector<std::string>& layerNames, const std::vector<std::string>& extensionNames, VkInstance& outInstance)
 {
 	// Copy layers
 	std::vector<const char*> layer_names;
@@ -383,6 +390,39 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
 
 
 /**
+ *	Returns the vulkan device queue associtated with the previously created device
+ */
+void getDeviceQueue(VkDevice& device, int familyQueueIndex, VkQueue& outGraphicsQueue)
+{
+	vkGetDeviceQueue(device, familyQueueIndex, 0, &outGraphicsQueue);
+}
+
+
+/**
+ *	Creates the vulkan surface that is rendered to by the device using SDL
+ */
+bool createSurface(SDL_Window* window, VkInstance& instance, VkPhysicalDevice& gpu, uint32_t graphicsFamilyQueueIndex, VkSurfaceKHR& outSurface)
+{
+	if (!SDL_Vulkan_CreateSurface(window, instance, &outSurface))
+	{
+		std::cout << "Unable to create Vulkan compatible surface using SDL\n";
+		return false;
+	}
+
+	// Make sure the surface is compatible with the queue family and gpu
+	VkBool32 supported = false;
+	vkGetPhysicalDeviceSurfaceSupportKHR(gpu, graphicsFamilyQueueIndex, outSurface, &supported);
+	if (!supported)
+	{
+		std::cout << "Surface is not supported by physical device!\n";
+		return false;
+	}
+
+	return true;
+}
+
+
+/**
  * Create a vulkan window
  */
 SDL_Window* createWindow()
@@ -412,7 +452,10 @@ int main(int argc, char *argv[])
 	// Create vulkan compatible window
 	SDL_Window* window = createWindow();
 
-	// Get available vulkan extensions, necessary for interfacting with native window
+	// Get available vulkan extensions, necessary for interfacing with native window
+	// SDL takes care of this call and returns, next to the default VK_KHR_surface a platform specific extension
+	// When initializing the vulkan instance these extensions have to be enabled in order to create a valid
+	// surface later on.
 	std::vector<std::string> found_extensions;
 	if (!getAvailableVulkanExtensions(window, found_extensions))
 		return -2;
@@ -428,7 +471,7 @@ int main(int argc, char *argv[])
 
 	// Create Vulkan Instance
 	VkInstance instance;
-	if (!createVulkanInstance(window, found_layers, found_extensions, instance))
+	if (!createVulkanInstance(found_layers, found_extensions, instance))
 		return -4;
 
 	// Vulkan messaging callback
@@ -445,6 +488,19 @@ int main(int argc, char *argv[])
 	VkDevice device;
 	if (!createLogicalDevice(gpu, graphics_queue_index, found_layers, found_extensions, device))
 		return -6;
+
+	// Create the surface we want to render to, associated with the window we created before
+	// This call also checks if the created surface is compatible with the previously selected physical device and associated render queue
+	VkSurfaceKHR surface;
+	if (!createSurface(window, instance, gpu, graphics_queue_index, surface))
+		return -7;
+
+	// Fetch the queue we want to submit the actual commands to
+	VkQueue graphics_queue;
+	getDeviceQueue(device, graphics_queue_index, graphics_queue);
+	std::cout << "\nsuccessfully initialized vulkan and graphics card\n";
+	std::cout << "successfully created windows and compatible surface\n";
+	std::cout << "ready to render!\n";
 
 	// WOOP, finally ready to render some stuff!
 	bool run = true;
