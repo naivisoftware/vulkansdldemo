@@ -7,7 +7,7 @@ SDL and Vulkan integration test demo.
 
 This demo attempts to create a window and vulkan compatible surface using SDL.
 Verified and tested using multiple GPUs under windows.
-Should work on every other SDL / Vulkan supported operating system (OSX, Linux, Android)
+Should work on every other SDL / Vulkan supported operating system (OSX, Linux, Android).
 main() clearly outlines all the specific steps taken to create a vulkan instance, select a device and create a vulkan compatible surface (opaque) that is associated with a window. The demo also verifies that the GPU can render to the surface.
 After compilation you should be ready to draw something using Vulkan.
 
