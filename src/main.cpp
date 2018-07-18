@@ -308,7 +308,7 @@ bool selectGPU(VkInstance& instance, VkPhysicalDevice& outDevice, unsigned int& 
 	unsigned int queue_node_index = -1;
 	for (unsigned int i = 0; i < family_queue_count; i++) 
 	{
-		if ((queue_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) 
+		if (queue_properties[i].queueCount > 0 && queue_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) 
 		{
 			queue_node_index = i;
 			break;
@@ -353,24 +353,30 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
 	queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	queue_create_info.queueFamilyIndex = queueFamilyIndex;
 	queue_create_info.queueCount = 1;
-	std::vector<float> queue_prio = { 1.0f };
-	queue_create_info.pQueuePriorities = queue_prio.data();
-
-	// We don't want any specific or special device features for now
-	VkPhysicalDeviceFeatures deviceFeatures = {};
+	float queue_prio = 1.0f;
+	queue_create_info.pQueuePriorities = &queue_prio;
+	queue_create_info.pNext = NULL;
+	queue_create_info.flags = NULL;
 
 	// Device creation information
 	VkDeviceCreateInfo create_info;
 	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	create_info.queueCreateInfoCount = 1;
-	create_info.pEnabledFeatures = &deviceFeatures;
+	create_info.pQueueCreateInfos = &queue_create_info;
 	create_info.ppEnabledLayerNames = layer_names.data();
 	create_info.enabledLayerCount = static_cast<uint32_t>(layer_names.size());
+	create_info.ppEnabledExtensionNames = NULL;
+	create_info.enabledExtensionCount = 0;
+	create_info.pNext = NULL;
+	create_info.pEnabledFeatures = NULL;
+	create_info.flags = NULL;
 
-	if (vkCreateDevice(physicalDevice, &create_info, nullptr, &outDevice) != VK_SUCCESS)
+	// Finally we're ready to create a new device
+	VkResult res = vkCreateDevice(physicalDevice, &create_info, nullptr, &outDevice);
+	if (res != VK_SUCCESS)
 	{
-		 std::cout << "failed to create logical device!\n";
-		 return false;
+		std::cout << "failed to create logical device!\n";
+		return false;
 	}
 	return true;
 }
