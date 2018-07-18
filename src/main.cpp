@@ -4,12 +4,30 @@
 #include <iostream>
 #include <vulkan/vulkan_core.h>
 #include <vector>
+#include <set>
 
 // Globals
-const char	gAppName[] = "VulkanDemo";
-const char	gEngineName[] = "VulkanDemoEngine";
-int			gWindowWidth = 512;
-int			gWindowHeight = 512;
+const char				gAppName[] = "VulkanDemo";
+const char				gEngineName[] = "VulkanDemoEngine";
+int						gWindowWidth = 512;
+int						gWindowHeight = 512;
+std::set<std::string>	gLayers;
+
+
+/**
+ *	@return the set of layers to be initialized with Vulkan
+ */
+const std::set<std::string>& getLayers()
+{
+	static std::set<std::string> layers;
+	if (layers.empty())
+	{
+		layers.emplace("VK_LAYER_NV_optimus");
+		layers.emplace("VK_LAYER_LUNARG_standard_validation");
+	}
+	return layers;
+}
+
 
 /**
 * Initializes SDL
@@ -28,9 +46,7 @@ bool initSDL()
 /**
  * Callback that receives a debug message from Vulkan
  */
-static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-	VkDebugReportFlagsEXT flags,
-	VkDebugReportObjectTypeEXT objType,
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType,
 	uint64_t obj,
 	size_t location,
 	int32_t code,
@@ -38,9 +54,54 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 	const char* msg,
 	void* userData) 
 {
-
-	std::cerr << "validation layer: " << msg << std::endl;
+	std::cout << "validation layer: " << layerPrefix << ": " << msg << std::endl;
 	return VK_FALSE;
+}
+
+
+VkResult createDebugReportCallbackEXT(VkInstance instance, const VkDebugReportCallbackCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugReportCallbackEXT* pCallback)
+{
+	auto func = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT");
+	if (func != nullptr) 
+	{
+		return func(instance, pCreateInfo, pAllocator, pCallback);
+	}
+	else 
+	{
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	}
+}
+
+
+/**
+ *	Sets up the vulkan messaging callback specified above
+ */
+bool setupDebugCallback(VkInstance& instance, VkDebugReportCallbackEXT& callback)
+{
+	VkDebugReportCallbackCreateInfoEXT createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+	createInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
+	createInfo.pfnCallback = debugCallback;
+
+	if (createDebugReportCallbackEXT(instance, &createInfo, nullptr, &callback) != VK_SUCCESS) 
+	{
+		std::cout << "unable to create debug report callback extension\n";
+		return false;
+	}
+	return true;
+}
+
+
+/**
+ * Destroys the callback extension object
+ */
+void destroyDebugReportCallbackEXT(VkInstance instance, VkDebugReportCallbackEXT callback, const VkAllocationCallbacks* pAllocator) 
+{
+	auto func = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugReportCallbackEXT");
+	if (func != nullptr) 
+	{
+		func(instance, callback, pAllocator);
+	}
 }
 
 
@@ -86,25 +147,23 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	vkEnumerateInstanceLayerProperties(&instance_layer_count, instance_layer_names.data());
 
 	// Display layer names
-	std::cout << "instance layers:\n";
+	std::cout << "found " << instance_layer_count << "instance layers:\n";
 	std::vector<const char*> valid_instance_layer_names;
+	const std::set<std::string>& lookup_layers = getLayers();
 	int count(0);
 	for (const auto& name : instance_layer_names)
 	{
-		// skip trace, causes vulkan initialization to fail: https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/2471
-		std::string lname(name.layerName);
-		if(lname == "VK_LAYER_LUNARG_vktrace")
-			continue;
-		
-		// Skip API dump layer as well, don't need that debug output info
-		if(lname == "VK_LAYER_LUNARG_api_dump")
-			continue;
-
 		std::cout << count << ": " << name.layerName << ": " << name.description << "\n";
-		valid_instance_layer_names.emplace_back(name.layerName);
+		auto it = lookup_layers.find(std::string(name.layerName));
+		if (it != lookup_layers.end())
+			valid_instance_layer_names.emplace_back(name.layerName);
 		count++;
 	}
+
+	// Print the ones we're enabling
 	std::cout << "\n";
+	for (const auto& layer : valid_instance_layer_names)
+		std::cout << "enabling layer: " << layer << "\n";
 
 	// Get the suppoerted vulkan instance version
 	unsigned int api_version;
@@ -249,9 +308,10 @@ SDL_Window* createWindow()
 /**
  *	Destroys the vulkan instance
  */
-void quit(VkInstance instance)
+void quit(VkInstance& instance, VkDebugReportCallbackEXT& callback)
 {
 	SDL_Quit();
+	destroyDebugReportCallbackEXT(instance, callback, NULL);
 	vkDestroyInstance(instance, nullptr);
 }
 
@@ -269,6 +329,10 @@ int main(int argc, char *argv[])
 	VkInstance instance;
 	if (!createVulkanInstance(window, instance))
 		return -1;
+
+	// Vulkan messaging callback
+	VkDebugReportCallbackEXT callback;
+	setupDebugCallback(instance, callback);
 
 	// Select GPU after succsessful creation of a vulkan instance (jeeeej no global states anymore)
 	VkPhysicalDevice gpu;
@@ -290,7 +354,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Destroy Vulkan Instance
-	quit(instance);
+	quit(instance, callback);
 	
 	return 1;
 }
