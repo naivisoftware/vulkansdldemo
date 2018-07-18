@@ -11,13 +11,12 @@ const char				gAppName[] = "VulkanDemo";
 const char				gEngineName[] = "VulkanDemoEngine";
 int						gWindowWidth = 512;
 int						gWindowHeight = 512;
-std::set<std::string>	gLayers;
 
 
 /**
  *	@return the set of layers to be initialized with Vulkan
  */
-const std::set<std::string>& getLayers()
+const std::set<std::string>& getRequestedLayerNames()
 {
 	static std::set<std::string> layers;
 	if (layers.empty())
@@ -105,16 +104,55 @@ void destroyDebugReportCallbackEXT(VkInstance instance, VkDebugReportCallbackEXT
 }
 
 
-/**
- * Creates a vulkan instance using all the available instance extensions and layers
- * @return if the instance was created successfully
- */
-bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
+bool getAvailableVulkanLayers(std::vector<std::string>& outLayers)
+{
+	// Figure out the amount of available layers
+	// Layers are used for debugging / validation etc / profiling..
+	unsigned int instance_layer_count = 0;
+	VkResult res = vkEnumerateInstanceLayerProperties(&instance_layer_count, NULL);
+	if (res != VK_SUCCESS)
+	{
+		std::cout << "unable to query vulkan instance layer property count\n";
+		return false;
+	}
+
+	std::vector<VkLayerProperties> instance_layer_names(instance_layer_count);
+	res = vkEnumerateInstanceLayerProperties(&instance_layer_count, instance_layer_names.data());
+	if (res != VK_SUCCESS)
+	{
+		std::cout << "unable to retrieve vulkan instance layer names\n";
+		return false;
+	}
+
+	// Display layer names and find the ones we specified above
+	std::cout << "found " << instance_layer_count << " instance layers:\n";
+	std::vector<const char*> valid_instance_layer_names;
+	const std::set<std::string>& lookup_layers = getRequestedLayerNames();
+	int count(0);
+	outLayers.clear();
+	for (const auto& name : instance_layer_names)
+	{
+		std::cout << count << ": " << name.layerName << ": " << name.description << "\n";
+		auto it = lookup_layers.find(std::string(name.layerName));
+		if (it != lookup_layers.end())
+			outLayers.emplace_back(name.layerName);
+		count++;
+	}
+
+	// Print the ones we're enabling
+	std::cout << "\n";
+	for (const auto& layer : outLayers)
+		std::cout << "found layer: " << layer.c_str() << "\n";
+	return true;
+}
+
+
+bool getAvailableVulkanExtensions(SDL_Window* window, std::vector<std::string>& outExtensions)
 {
 	// Figure out the amount of extensions vulkan needs to interface with the os windowing system 
 	// This is necessary because vulkan is a platform agnostic API and needs to know how to interface with the windowing system
 	unsigned int ext_count = 0;
-	if(!SDL_Vulkan_GetInstanceExtensions(window, &ext_count, nullptr))
+	if (!SDL_Vulkan_GetInstanceExtensions(window, &ext_count, nullptr))
 	{
 		std::cout << "Unable to query the number of Vulkan instance extensions\n";
 		return false;
@@ -133,37 +171,31 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	for (unsigned int i = 0; i < ext_count; i++)
 	{
 		std::cout << i << ": " << ext_names[i] << "\n";
+		outExtensions.emplace_back(ext_names[i]);
 	}
-	std::cout << "\n";
 
 	// Add debug display extension, we need this to relay debug messages
-	ext_names.emplace_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-
-	// Figure out the amount of available layers
-	// Layers are used for debugging / validation etc / profiling..
-	unsigned int instance_layer_count = 0;
-	VkResult res = vkEnumerateInstanceLayerProperties(&instance_layer_count, NULL);
-	std::vector<VkLayerProperties> instance_layer_names(instance_layer_count);
-	vkEnumerateInstanceLayerProperties(&instance_layer_count, instance_layer_names.data());
-
-	// Display layer names
-	std::cout << "found " << instance_layer_count << "instance layers:\n";
-	std::vector<const char*> valid_instance_layer_names;
-	const std::set<std::string>& lookup_layers = getLayers();
-	int count(0);
-	for (const auto& name : instance_layer_names)
-	{
-		std::cout << count << ": " << name.layerName << ": " << name.description << "\n";
-		auto it = lookup_layers.find(std::string(name.layerName));
-		if (it != lookup_layers.end())
-			valid_instance_layer_names.emplace_back(name.layerName);
-		count++;
-	}
-
-	// Print the ones we're enabling
+	outExtensions.emplace_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 	std::cout << "\n";
-	for (const auto& layer : valid_instance_layer_names)
-		std::cout << "enabling layer: " << layer << "\n";
+	return true;
+}
+
+
+/**
+ * Creates a vulkan instance using all the available instance extensions and layers
+ * @return if the instance was created successfully
+ */
+bool createVulkanInstance(SDL_Window* window, const std::vector<std::string>& layerNames, const std::vector<std::string>& extensionNames, VkInstance& outInstance)
+{
+	// Copy layers
+	std::vector<const char*> layer_names;
+	for (const auto& layer : layerNames)
+		layer_names.emplace_back(layer.c_str());
+
+	// Copy extensions
+	std::vector<const char*> ext_names;
+	for (const auto& ext : extensionNames)
+		ext_names.emplace_back(ext.c_str());
 
 	// Get the suppoerted vulkan instance version
 	unsigned int api_version;
@@ -187,12 +219,12 @@ bool createVulkanInstance(SDL_Window* window, VkInstance& outInstance)
 	inst_info.pApplicationInfo = &app_info;
 	inst_info.enabledExtensionCount = static_cast<uint32_t>(ext_names.size());
 	inst_info.ppEnabledExtensionNames = ext_names.data();
-	inst_info.enabledLayerCount = static_cast<uint32_t>(valid_instance_layer_names.size());
-	inst_info.ppEnabledLayerNames = valid_instance_layer_names.data();
+	inst_info.enabledLayerCount = static_cast<uint32_t>(layer_names.size());
+	inst_info.ppEnabledLayerNames = layer_names.data();
 
 	// Create vulkan runtime instance
 	std::cout << "initializing Vulkan instance\n\n";
-	res = vkCreateInstance(&inst_info, NULL, &outInstance);
+	VkResult res = vkCreateInstance(&inst_info, NULL, &outInstance);
 	switch (res)
 	{
 	case VK_SUCCESS:
@@ -297,6 +329,54 @@ bool selectGPU(VkInstance& instance, VkPhysicalDevice& outDevice, unsigned int& 
 
 
 /**
+ *	Creates a logical device
+ */
+bool createLogicalDevice(VkPhysicalDevice& physicalDevice, 
+	unsigned int queueFamilyIndex, 
+	const std::vector<std::string>& layerNames,
+	const std::vector<std::string>& extNames,
+	VkDevice& outDevice)
+{
+	// Copy layer names
+	std::vector<const char*> layer_names;
+	for (const auto& layer : layerNames)
+		layer_names.emplace_back(layer.c_str());
+
+	// Copy extensions
+	std::vector<const char*> ext_names;
+	for (const auto& ext : extNames)
+		ext_names.emplace_back(ext.c_str());
+
+	// Create queue information structure used by device based on the previously fetched queue information from the physical device
+	// We create one command processing queue for graphics
+	VkDeviceQueueCreateInfo queue_create_info;
+	queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	queue_create_info.queueFamilyIndex = queueFamilyIndex;
+	queue_create_info.queueCount = 1;
+	std::vector<float> queue_prio = { 1.0f };
+	queue_create_info.pQueuePriorities = queue_prio.data();
+
+	// We don't want any specific or special device features for now
+	VkPhysicalDeviceFeatures deviceFeatures = {};
+
+	// Device creation information
+	VkDeviceCreateInfo create_info;
+	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	create_info.queueCreateInfoCount = 1;
+	create_info.pEnabledFeatures = &deviceFeatures;
+	create_info.ppEnabledLayerNames = layer_names.data();
+	create_info.enabledLayerCount = static_cast<uint32_t>(layer_names.size());
+
+	if (vkCreateDevice(physicalDevice, &create_info, nullptr, &outDevice) != VK_SUCCESS)
+	{
+		 std::cout << "failed to create logical device!\n";
+		 return false;
+	}
+	return true;
+}
+
+
+/**
  * Create a vulkan window
  */
 SDL_Window* createWindow()
@@ -308,9 +388,10 @@ SDL_Window* createWindow()
 /**
  *	Destroys the vulkan instance
  */
-void quit(VkInstance& instance, VkDebugReportCallbackEXT& callback)
+void quit(VkInstance& instance, VkDevice& device, VkDebugReportCallbackEXT& callback)
 {
 	SDL_Quit();
+	vkDestroyDevice(device, nullptr);
 	destroyDebugReportCallbackEXT(instance, callback, NULL);
 	vkDestroyInstance(instance, nullptr);
 }
@@ -325,10 +406,24 @@ int main(int argc, char *argv[])
 	// Create vulkan compatible window
 	SDL_Window* window = createWindow();
 
+	// Get available vulkan extensions, necessary for interfacting with native window
+	std::vector<std::string> found_extensions;
+	if (!getAvailableVulkanExtensions(window, found_extensions))
+		return -2;
+
+	// Get available vulkan layer extensions, notify when not all could be found
+	std::vector<std::string> found_layers;
+	if (!getAvailableVulkanLayers(found_layers))
+		return -3;
+
+	// Warn when not all requested layers could be found
+	if (found_layers.size() != getRequestedLayerNames().size())
+		std::cout << "warning! not all requested layers could be found!\n";
+
 	// Create Vulkan Instance
 	VkInstance instance;
-	if (!createVulkanInstance(window, instance))
-		return -1;
+	if (!createVulkanInstance(window, found_layers, found_extensions, instance))
+		return -4;
 
 	// Vulkan messaging callback
 	VkDebugReportCallbackEXT callback;
@@ -336,10 +431,16 @@ int main(int argc, char *argv[])
 
 	// Select GPU after succsessful creation of a vulkan instance (jeeeej no global states anymore)
 	VkPhysicalDevice gpu;
-	unsigned int graphics_queue_node_index(-1);
-	if (!selectGPU(instance, gpu, graphics_queue_node_index))
-		return -1;
+	unsigned int graphics_queue_index(-1);
+	if (!selectGPU(instance, gpu, graphics_queue_index))
+		return -5;
 
+	// Create a logical device that interfaces with the physical device
+	VkDevice device;
+	if (!createLogicalDevice(gpu, graphics_queue_index, found_layers, found_extensions, device))
+		return -6;
+
+	// WOOP, finally ready to render some stuff!
 	bool run = true;
 	while (run)
 	{
@@ -354,7 +455,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Destroy Vulkan Instance
-	quit(instance, callback);
+	quit(instance, device, callback);
 	
 	return 1;
 }
