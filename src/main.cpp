@@ -36,6 +36,20 @@ const std::set<std::string>& getRequestedLayerNames()
 
 
 /**
+ * @return the set of required device extension names
+ */
+const std::set<std::string>& getRequestedDeviceExtensionNames()
+{
+	static std::set<std::string> layers;
+	if (layers.empty())
+	{
+		layers.emplace("VK_KHR_swapchain");
+	}
+	return layers;
+}
+
+
+/**
 * Initializes SDL
 * @return true if SDL was initialized successfully
 */
@@ -149,7 +163,7 @@ bool getAvailableVulkanLayers(std::vector<std::string>& outLayers)
 	// Print the ones we're enabling
 	std::cout << "\n";
 	for (const auto& layer : outLayers)
-		std::cout << "found layer: " << layer.c_str() << "\n";
+		std::cout << "applying layer: " << layer.c_str() << "\n";
 	return true;
 }
 
@@ -311,11 +325,11 @@ bool selectGPU(VkInstance& instance, VkPhysicalDevice& outDevice, unsigned int& 
 	std::vector<VkQueueFamilyProperties> queue_properties(family_queue_count);
 	vkGetPhysicalDeviceQueueFamilyProperties(selected_device, &family_queue_count, queue_properties.data());
 
-	// Make sure the family of commands contains an option to issue graphical commands
+	// Make sure the family of commands contains an option to issue graphical commands.
 	unsigned int queue_node_index = -1;
 	for (unsigned int i = 0; i < family_queue_count; i++) 
 	{
-		if (queue_properties[i].queueCount > 0 && queue_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) 
+		if (queue_properties[i].queueCount > 0 && queue_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
 		{
 			queue_node_index = i;
 			break;
@@ -338,10 +352,9 @@ bool selectGPU(VkInstance& instance, VkPhysicalDevice& outDevice, unsigned int& 
 /**
  *	Creates a logical device
  */
-bool createLogicalDevice(VkPhysicalDevice& physicalDevice, 
-	unsigned int queueFamilyIndex, 
+bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
+	unsigned int queueFamilyIndex,
 	const std::vector<std::string>& layerNames,
-	const std::vector<std::string>& extNames,
 	VkDevice& outDevice)
 {
 	// Copy layer names
@@ -349,10 +362,46 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
 	for (const auto& layer : layerNames)
 		layer_names.emplace_back(layer.c_str());
 
-	// Copy extensions
-	std::vector<const char*> ext_names;
-	for (const auto& ext : extNames)
-		ext_names.emplace_back(ext.c_str());
+
+	// Get the number of available extensions for our graphics card
+	uint32_t device_property_count(0);
+	if (vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &device_property_count, NULL) != VK_SUCCESS)
+	{
+		std::cout << "Unable to acquire device extension property count\n";
+		return false;
+	}
+	std::cout << "\nfound " << device_property_count << " device extensions\n";
+
+	// Acquire their actual names
+	std::vector<VkExtensionProperties> device_properties(device_property_count);
+	if (vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &device_property_count, device_properties.data()) != VK_SUCCESS)
+	{
+		std::cout << "Unable to acquire device extension property names\n";
+		return false;
+	}
+
+	// Match names against requested extension
+	std::vector<const char*> device_property_names;
+	const std::set<std::string>& required_extension_names = getRequestedDeviceExtensionNames();
+	int count = 0;
+	for (const auto& ext_property : device_properties)
+	{
+		std::cout << count << ": " << ext_property.extensionName << "\n";
+		auto it = required_extension_names.find(std::string(ext_property.extensionName));
+		if (it != required_extension_names.end())
+		{
+			device_property_names.emplace_back(ext_property.extensionName);
+		}
+		count++;
+	}
+
+	// Warn if not all required extensions were found
+	if (required_extension_names.size() != device_property_names.size())
+		std::cout << "warning! not all requested image extensions were found!\n";
+
+	std::cout << "\n";
+	for (const auto& name : device_property_names)
+		std::cout << "applying device extension: " << name << "\n";
 
 	// Create queue information structure used by device based on the previously fetched queue information from the physical device
 	// We create one command processing queue for graphics
@@ -360,8 +409,8 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
 	queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	queue_create_info.queueFamilyIndex = queueFamilyIndex;
 	queue_create_info.queueCount = 1;
-	float queue_prio = 1.0f;
-	queue_create_info.pQueuePriorities = &queue_prio;
+	std::vector<float> queue_prio = { 1.0f };
+	queue_create_info.pQueuePriorities = queue_prio.data();
 	queue_create_info.pNext = NULL;
 	queue_create_info.flags = NULL;
 
@@ -372,8 +421,8 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
 	create_info.pQueueCreateInfos = &queue_create_info;
 	create_info.ppEnabledLayerNames = layer_names.data();
 	create_info.enabledLayerCount = static_cast<uint32_t>(layer_names.size());
-	create_info.ppEnabledExtensionNames = NULL;
-	create_info.enabledExtensionCount = 0;
+	create_info.ppEnabledExtensionNames = device_property_names.data();
+	create_info.enabledExtensionCount = static_cast<uint32_t>(device_property_names.size());
 	create_info.pNext = NULL;
 	create_info.pEnabledFeatures = NULL;
 	create_info.flags = NULL;
@@ -486,7 +535,7 @@ int main(int argc, char *argv[])
 
 	// Create a logical device that interfaces with the physical device
 	VkDevice device;
-	if (!createLogicalDevice(gpu, graphics_queue_index, found_layers, found_extensions, device))
+	if (!createLogicalDevice(gpu, graphics_queue_index, found_layers, device))
 		return -6;
 
 	// Create the surface we want to render to, associated with the window we created before
