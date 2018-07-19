@@ -770,6 +770,33 @@ bool createSwapChain(VkSurfaceKHR surface, VkPhysicalDevice physicalDevice, VkDe
 		std::cout << "unable to create swap chain\n";
 		return false;
 	}
+
+	// Store handle
+	outSwapChain = old_swap_chain;
+	return true;
+}
+
+
+/**
+ *	Returns the handles of all the images in a swap chain, result is stored in outImageHandles
+ */
+bool getSwapChainImageHandles(VkDevice device, VkSwapchainKHR chain, std::vector<VkImage>& outImageHandles)
+{
+	unsigned int image_count(0);
+	VkResult res = vkGetSwapchainImagesKHR(device, chain, &image_count, nullptr);
+	if (res != VK_SUCCESS)
+	{
+		std::cout << "unable to get number of images in swap chain\n";
+		return false;
+	}
+
+	outImageHandles.clear();
+	outImageHandles.resize(image_count);
+	if (vkGetSwapchainImagesKHR(device, chain, &image_count, outImageHandles.data()) != VK_SUCCESS)
+	{
+		std::cout << "unable to get image handles from swap chain\n";
+		return false;
+	}
 	return true;
 }
 
@@ -852,12 +879,18 @@ int main(int argc, char *argv[])
 	if (!createSwapChain(presentation_surface, gpu, device, swap_chain))
 		return -1;
 
+	// Get image handles from swap chain
+	std::vector<VkImage> chain_images;
+	if (!getSwapChainImageHandles(device, swap_chain, chain_images))
+		return -1;
+
 	// Fetch the queue we want to submit the actual commands to
 	VkQueue graphics_queue;
 	getDeviceQueue(device, graphics_queue_index, graphics_queue);
-	
-	std::cout << "\nsuccessfully initialized vulkan and graphics card\n";
-	std::cout << "successfully created windows and compatible surface\n";
+
+	std::cout << "\nsuccessfully initialized vulkan and physical device (gpu).\n";
+	std::cout << "successfully created a window and compatible surface\n";
+	std::cout << "successfully created swapchain\n";
 	std::cout << "ready to render!\n";
 
 	// WOOP, finally ready to render some stuff!
