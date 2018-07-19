@@ -140,7 +140,7 @@ VkResult createDebugReportCallbackEXT(VkInstance instance, const VkDebugReportCa
 /**
  *	Sets up the vulkan messaging callback specified above
  */
-bool setupDebugCallback(VkInstance& instance, VkDebugReportCallbackEXT& callback)
+bool setupDebugCallback(VkInstance instance, VkDebugReportCallbackEXT& callback)
 {
 	VkDebugReportCallbackCreateInfoEXT createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
@@ -311,7 +311,7 @@ bool createVulkanInstance(const std::vector<std::string>& layerNames, const std:
  * @param outDevice the selected physical device (gpu)
  * @param outQueueFamilyIndex queue command family that can handle graphics commands
  */
-bool selectGPU(VkInstance& instance, VkPhysicalDevice& outDevice, unsigned int& outQueueFamilyIndex)
+bool selectGPU(VkInstance instance, VkPhysicalDevice& outDevice, unsigned int& outQueueFamilyIndex)
 {
 	// Get number of available physical devices, needs to be at least 1
 	unsigned int physical_device_count(0);
@@ -488,7 +488,7 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
 /**
  *	Returns the vulkan device queue associtated with the previously created device
  */
-void getDeviceQueue(VkDevice& device, int familyQueueIndex, VkQueue& outGraphicsQueue)
+void getDeviceQueue(VkDevice device, int familyQueueIndex, VkQueue& outGraphicsQueue)
 {
 	vkGetDeviceQueue(device, familyQueueIndex, 0, &outGraphicsQueue);
 }
@@ -497,7 +497,7 @@ void getDeviceQueue(VkDevice& device, int familyQueueIndex, VkQueue& outGraphics
 /**
  *	Creates the vulkan surface that is rendered to by the device using SDL
  */
-bool createSurface(SDL_Window* window, VkInstance& instance, VkPhysicalDevice& gpu, uint32_t graphicsFamilyQueueIndex, VkSurfaceKHR& outSurface)
+bool createSurface(SDL_Window* window, VkInstance instance, VkPhysicalDevice gpu, uint32_t graphicsFamilyQueueIndex, VkSurfaceKHR& outSurface)
 {
 	if (!SDL_Vulkan_CreateSurface(window, instance, &outSurface))
 	{
@@ -522,7 +522,7 @@ bool createSurface(SDL_Window* window, VkInstance& instance, VkPhysicalDevice& g
  * @return if the present modes could be queried and ioMode is set
  * @param outMode the mode that is requested, will contain FIFO when requested mode is not available
  */
-bool getPresentationMode(VkSurfaceKHR& surface, VkPhysicalDevice& device, VkPresentModeKHR& ioMode)
+bool getPresentationMode(VkSurfaceKHR surface, VkPhysicalDevice device, VkPresentModeKHR& ioMode)
 {
 	uint32_t mode_count(0);
 	if(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &mode_count, NULL) != VK_SUCCESS)
@@ -813,11 +813,12 @@ SDL_Window* createWindow()
 /**
  *	Destroys the vulkan instance
  */
-void quit(VkInstance& instance, VkDevice& device, VkDebugReportCallbackEXT& callback)
+void quit(VkInstance instance, VkDevice device, VkDebugReportCallbackEXT callback, VkSwapchainKHR chain)
 {
 	SDL_Quit();
+	vkDestroySwapchainKHR(device, chain, nullptr);
 	vkDestroyDevice(device, nullptr);
-	destroyDebugReportCallbackEXT(instance, callback, NULL);
+	destroyDebugReportCallbackEXT(instance, callback, nullptr);
 	vkDestroyInstance(instance, nullptr);
 }
 
@@ -908,7 +909,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Destroy Vulkan Instance
-	quit(instance, device, callback);
+	quit(instance, device, callback, swap_chain);
 	
 	return 1;
 }
