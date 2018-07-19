@@ -5,12 +5,19 @@
 #include <vulkan/vulkan_core.h>
 #include <vector>
 #include <set>
+#include <glm/glm.hpp>
+#include <assert.h>
 
-// Globals
-const char				gAppName[] = "VulkanDemo";
-const char				gEngineName[] = "VulkanDemoEngine";
-int						gWindowWidth = 512;
-int						gWindowHeight = 512;
+// Global Settings
+const char						gAppName[] = "VulkanDemo";
+const char						gEngineName[] = "VulkanDemoEngine";
+int								gWindowWidth = 1280;
+int								gWindowHeight = 720;
+VkPresentModeKHR				gPresentationMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+VkSurfaceTransformFlagBitsKHR	gTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+VkFormat						gFormat = VK_FORMAT_B8G8R8A8_SRGB;
+VkColorSpaceKHR					gColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+VkImageUsageFlags				gImageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
 /**
  * This demo attempts to create a window and vulkan compatible surface using SDL
@@ -19,6 +26,10 @@ int						gWindowHeight = 512;
  * main() clearly outlines all the specific steps taken to create a vulkan instance,
  * select a device, create a vulkan compatible surface (opaque) associated with a window.
  */
+
+//////////////////////////////////////////////////////////////////////////
+// Global Settings
+//////////////////////////////////////////////////////////////////////////
 
 /**
  *	@return the set of layers to be initialized with Vulkan
@@ -43,11 +54,44 @@ const std::set<std::string>& getRequestedDeviceExtensionNames()
 	static std::set<std::string> layers;
 	if (layers.empty())
 	{
-		layers.emplace("VK_KHR_swapchain");
+		layers.emplace(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 	}
 	return layers;
 }
 
+
+/**
+ * @return the set of required image usage scenarios 
+ * that need to be supported by the surface and swap chain
+ */
+const std::vector<VkImageUsageFlags> getRequestedImageUsages()
+{
+	static std::vector<VkImageUsageFlags> usages;
+	if (usages.empty())
+	{
+		usages.emplace_back(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+	}
+	return usages;
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+// Utilities
+//////////////////////////////////////////////////////////////////////////
+
+/**
+ * Clamps value between min and max
+ */
+template<typename T>
+T clamp(T value, T min, T max)
+{
+	return glm::clamp<T>(value, min, max);
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+// Setup
+//////////////////////////////////////////////////////////////////////////
 
 /**
 * Initializes SDL
@@ -397,7 +441,10 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
 
 	// Warn if not all required extensions were found
 	if (required_extension_names.size() != device_property_names.size())
-		std::cout << "warning! not all requested image extensions were found!\n";
+	{
+		std::cout << "not all required device extensions are supported!\n";
+		return false;
+	}
 
 	std::cout << "\n";
 	for (const auto& name : device_property_names)
@@ -472,6 +519,262 @@ bool createSurface(SDL_Window* window, VkInstance& instance, VkPhysicalDevice& g
 
 
 /**
+ * @return if the present modes could be queried and ioMode is set
+ * @param outMode the mode that is requested, will contain FIFO when requested mode is not available
+ */
+bool getPresentationMode(VkSurfaceKHR& surface, VkPhysicalDevice& device, VkPresentModeKHR& ioMode)
+{
+	uint32_t mode_count(0);
+	if(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &mode_count, NULL) != VK_SUCCESS)
+	{
+		std::cout << "unable to query present mode count for physical device\n";
+		return false;
+	}
+
+	std::vector<VkPresentModeKHR> available_modes(mode_count);
+	if (vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &mode_count, available_modes.data()) != VK_SUCCESS)
+	{
+		std::cout << "unable to query the various present modes for physical device\n";
+		return false;
+	}
+
+	for (auto& mode : available_modes)
+	{
+		if (mode == ioMode)
+			return true;
+	}
+	std::cout << "unable to obtain preferred display mode, fallback to FIFO\n";
+	ioMode = VK_PRESENT_MODE_FIFO_KHR;
+	return true;
+}
+
+
+/**
+ * Obtain the surface properties that are required for the creation of the swap chain
+ */
+bool getSurfaceProperties(VkPhysicalDevice device, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR& capabilities)
+{
+	if(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &capabilities) != VK_SUCCESS)
+	{
+		std::cout << "unable to acquire surface capabilities\n";
+		return false;
+	}
+	return true;
+}
+
+
+/**
+ * Figure out the number of images that are used by the swapchain and
+ * available to us in the application, based on the minimum amount of necessary images
+ * provided by the capabilities struct.
+ */
+unsigned int getNumberOfSwapImages(const VkSurfaceCapabilitiesKHR& capabilities)
+{
+	unsigned int number = capabilities.minImageCount + 1;
+	return number > capabilities.maxImageCount ? capabilities.minImageCount : number;
+}
+
+
+/**
+ *	Returns the size of a swapchain image based on the current surface
+ */
+VkExtent2D getSwapImageSize(const VkSurfaceCapabilitiesKHR& capabilities)
+{
+	// Default size = window size
+	VkExtent2D size = { (unsigned int)gWindowWidth, (unsigned int)gWindowHeight };
+	
+	// This happens when the window scales based on the size of an image
+	if (capabilities.currentExtent.width == 0xFFFFFFF)
+	{
+		size.width  = glm::clamp<unsigned int>(size.width,  capabilities.minImageExtent.width,  capabilities.maxImageExtent.width);
+		size.height = glm::clamp<unsigned int>(size.height, capabilities.maxImageExtent.height, capabilities.maxImageExtent.height);
+	}
+	else
+	{
+		size = capabilities.currentExtent;
+	}
+	return size;
+}
+
+
+/**
+ * Checks if the surface supports color and other required surface bits
+ * If so constructs a ImageUsageFlags bitmask that is returned in outUsage
+ * @return if the surface supports all the previously defined bits
+ */
+bool getImageUsage(const VkSurfaceCapabilitiesKHR& capabilities, VkImageUsageFlags& outUsage)
+{
+	const std::vector<VkImageUsageFlags>& desir_usages = getRequestedImageUsages();
+	assert(desir_usages.size() > 0);
+
+	// Needs to be always present
+	outUsage = desir_usages[0];
+
+	for (const auto& desired_usage : desir_usages)
+	{
+		VkImageUsageFlags image_usage = desired_usage & capabilities.supportedUsageFlags;
+		if (image_usage != desired_usage)
+		{
+			std::cout << "unsupported image usage flag: " << desired_usage << "\n";
+			return false;
+		}
+
+		// Add bit if found as supported color
+		outUsage = (outUsage | desired_usage);
+	}
+
+	return true;
+}
+
+
+/**
+ * @return transform based on global declared above, current transform if that transform isn't available
+ */
+VkSurfaceTransformFlagBitsKHR getTransform(const VkSurfaceCapabilitiesKHR& capabilities)
+{
+	if (capabilities.supportedTransforms & gTransform)
+		return gTransform;
+	std::cout << "unsupported surface transform: " << gTransform;
+	return capabilities.currentTransform;
+}
+
+
+/**
+ * @return the most appropriate color space based on the globals provided above
+ */
+bool getFormat(VkPhysicalDevice device, VkSurfaceKHR surface, VkSurfaceFormatKHR& outFormat)
+{
+	unsigned int count(0);
+	if (vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &count, nullptr) != VK_SUCCESS)
+	{
+		std::cout << "unable to query number of supported surface formats";
+		return false;
+	}
+
+	std::vector<VkSurfaceFormatKHR> found_formats(count);
+	if (vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &count, found_formats.data()) != VK_SUCCESS)
+	{
+		std::cout << "unable to query all supported surface formats\n";
+		return false;
+	}
+
+	// This means there are no restrictions on the supported format.
+	// Preference would work
+	if (found_formats.size() == 1 && found_formats[0].format == VK_FORMAT_UNDEFINED)
+	{
+		outFormat.format = gFormat;
+		outFormat.colorSpace = gColorSpace;
+		return true;
+	}
+
+	// Otherwise check if both are supported
+	for (const auto& found_format_outer : found_formats)
+	{
+		// Format found
+		if (found_format_outer.format == gFormat)
+		{
+			outFormat.format = found_format_outer.format;
+			for (const auto& found_format_inner : found_formats)
+			{
+				// Color space found
+				if (found_format_inner.colorSpace == gColorSpace)
+				{
+					outFormat.colorSpace = found_format_inner.colorSpace;
+					return true;
+				}
+			}
+
+			// No matching color space, pick first one
+			std::cout << "warning: no matching color space found, picking first available one\n!";
+			outFormat.colorSpace = found_formats[0].colorSpace;
+			return true;
+		}
+	}
+
+	// No matching formats found
+	std::cout << "warning: no matching color format found, picking first available one\n";
+	outFormat = found_formats[0];
+	return true;
+}
+
+
+/**
+ * creates the swap chain using utility functions above to retrieve swap chain properties
+ * Swap chain is associated with a single window (surface) and allows us to display images to screen 
+ */
+bool createSwapChain(VkSurfaceKHR surface, VkPhysicalDevice physicalDevice, VkDevice device, VkSwapchainKHR& outSwapChain)
+{
+	// Get properties of surface, necessary for creation of swap-chain
+	VkSurfaceCapabilitiesKHR surface_properties;
+	if (!getSurfaceProperties(physicalDevice, surface, surface_properties))
+		return false;
+
+	// Get the image presentation mode (synced, immediate etc.)
+	VkPresentModeKHR presentation_mode = gPresentationMode;
+	if (!getPresentationMode(surface, physicalDevice, presentation_mode))
+		return false;
+
+	// Get other swap chain related features
+	unsigned int swap_image_count = getNumberOfSwapImages(surface_properties);
+	
+	// Size of the images
+	VkExtent2D swap_image_extent = getSwapImageSize(surface_properties);
+	
+	// Get image usage (color etc.)
+	VkImageUsageFlags usage_flags;
+	if (!getImageUsage(surface_properties, usage_flags))
+		return false;
+
+	// Get the transform, falls back on current transform when transform is not supported
+	VkSurfaceTransformFlagBitsKHR transform = getTransform(surface_properties);
+
+	// Get swapchain image format
+	VkSurfaceFormatKHR image_format;
+	if (!getFormat(physicalDevice, surface, image_format))
+		return false;
+
+	// Old swap chain
+	VkSwapchainKHR old_swap_chain = outSwapChain;
+
+	// Populate swapchain creation info
+	VkSwapchainCreateInfoKHR swap_info;
+	swap_info.pNext = nullptr;
+	swap_info.flags = 0;
+	swap_info.surface = surface;
+	swap_info.minImageCount = swap_image_count;
+	swap_info.imageFormat = image_format.format;
+	swap_info.imageColorSpace = image_format.colorSpace;
+	swap_info.imageExtent = swap_image_extent;
+	swap_info.imageArrayLayers = 1;
+	swap_info.imageUsage = usage_flags;
+	swap_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	swap_info.queueFamilyIndexCount = 0;
+	swap_info.pQueueFamilyIndices = nullptr;
+	swap_info.preTransform = transform;
+	swap_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	swap_info.presentMode = presentation_mode;
+	swap_info.clipped = true;
+	swap_info.oldSwapchain = NULL;
+	swap_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+
+	// Destroy old swap chain
+	if (old_swap_chain != VK_NULL_HANDLE)
+	{
+		vkDestroySwapchainKHR(device, old_swap_chain, nullptr);
+		old_swap_chain = VK_NULL_HANDLE;
+	}
+
+	// Create new one
+	if (vkCreateSwapchainKHR(device, &swap_info, nullptr, &old_swap_chain) != VK_SUCCESS)
+	{
+		std::cout << "unable to create swap chain\n";
+		return false;
+	}
+	return true;
+}
+
+
+/**
  * Create a vulkan window
  */
 SDL_Window* createWindow()
@@ -507,12 +810,12 @@ int main(int argc, char *argv[])
 	// surface later on.
 	std::vector<std::string> found_extensions;
 	if (!getAvailableVulkanExtensions(window, found_extensions))
-		return -2;
+		return -1;
 
 	// Get available vulkan layer extensions, notify when not all could be found
 	std::vector<std::string> found_layers;
 	if (!getAvailableVulkanLayers(found_layers))
-		return -3;
+		return -1;
 
 	// Warn when not all requested layers could be found
 	if (found_layers.size() != getRequestedLayerNames().size())
@@ -521,7 +824,7 @@ int main(int argc, char *argv[])
 	// Create Vulkan Instance
 	VkInstance instance;
 	if (!createVulkanInstance(found_layers, found_extensions, instance))
-		return -4;
+		return -1;
 
 	// Vulkan messaging callback
 	VkDebugReportCallbackEXT callback;
@@ -531,22 +834,28 @@ int main(int argc, char *argv[])
 	VkPhysicalDevice gpu;
 	unsigned int graphics_queue_index(-1);
 	if (!selectGPU(instance, gpu, graphics_queue_index))
-		return -5;
+		return -1;
 
 	// Create a logical device that interfaces with the physical device
 	VkDevice device;
 	if (!createLogicalDevice(gpu, graphics_queue_index, found_layers, device))
-		return -6;
+		return -1;
 
 	// Create the surface we want to render to, associated with the window we created before
 	// This call also checks if the created surface is compatible with the previously selected physical device and associated render queue
-	VkSurfaceKHR surface;
-	if (!createSurface(window, instance, gpu, graphics_queue_index, surface))
-		return -7;
+	VkSurfaceKHR presentation_surface;
+	if (!createSurface(window, instance, gpu, graphics_queue_index, presentation_surface))
+		return -1;
+
+	// Create swap chain
+	VkSwapchainKHR swap_chain = NULL;
+	if (!createSwapChain(presentation_surface, gpu, device, swap_chain))
+		return -1;
 
 	// Fetch the queue we want to submit the actual commands to
 	VkQueue graphics_queue;
 	getDeviceQueue(device, graphics_queue_index, graphics_queue);
+	
 	std::cout << "\nsuccessfully initialized vulkan and graphics card\n";
 	std::cout << "successfully created windows and compatible surface\n";
 	std::cout << "ready to render!\n";
