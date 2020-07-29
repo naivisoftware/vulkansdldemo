@@ -25,4 +25,5 @@ This demo is based on a set of tutorials (mix and match):
 - Windows: Copy the SDL dll from *\Third-Party\Bin\ to the vulkansdldemo output directory
 - Windows: Run
 
-- Others: simply compile the main.cpp file and link to the vulkan and SDL library.
+- Others: Compile the main.cpp file and link to the vulkan and SDL2 library. 
+Example: `g++ main.cpp  -lSDL2 -lvulkan -lglm`
