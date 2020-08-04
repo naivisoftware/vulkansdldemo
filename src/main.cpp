@@ -830,7 +830,11 @@ int main(int argc, char *argv[])
 		return -1;
 
 	// Create vulkan compatible window
-	SDL_Window* window = createWindow();
+        SDL_Window* window {createWindow()};
+        if (!window){
+	    SDL_Quit();
+	    return -1;
+        }
 
 	// Get available vulkan extensions, necessary for interfacing with native window
 	// SDL takes care of this call and returns, next to the default VK_KHR_surface a platform specific extension
