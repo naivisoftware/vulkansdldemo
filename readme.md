@@ -19,11 +19,11 @@ This demo is based on a set of tutorials (mix and match):
 ## Compilation
 
 - Windows: Place the vulkansdldemo project next to the vulkan SDK (same level)
-	- ie sdk: root/vulkan/1.*/...
-	- ie dem: root/vulkansdldemo
+    - ie sdk: root/vulkan/1.*/...
+    - ie dem: root/vulkansdldemo
 - Windows: Open the VS solution and compile.
 - Windows: Copy the SDL dll from *\Third-Party\Bin\ to the vulkansdldemo output directory
 - Windows: Run
 
-- Others: Compile the main.cpp file and link to the vulkan and SDL2 library. 
-Example: `g++ main.cpp  -lSDL2 -lvulkan -lglm`
+- Others: Compile the main.cpp file and link to the vulkan and SDL2 library.
+Example: `g++ main.cpp  -lSDL2 -lvulkan`
