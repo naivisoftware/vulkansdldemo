@@ -587,7 +587,7 @@ VkExtent2D getSwapImageSize(const VkSurfaceCapabilitiesKHR& capabilities)
     if (capabilities.currentExtent.width == 0xFFFFFFF)
     {
         size.width  = glm::clamp<unsigned int>(size.width,  capabilities.minImageExtent.width,  capabilities.maxImageExtent.width);
-        size.height = glm::clamp<unsigned int>(size.height, capabilities.maxImageExtent.height, capabilities.maxImageExtent.height);
+        size.height = glm::clamp<unsigned int>(size.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     }
     else
     {
