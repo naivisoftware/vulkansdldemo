@@ -27,3 +27,7 @@ This demo is based on a set of tutorials (mix and match):
 
 - Others: Compile the main.cpp file and link to the vulkan and SDL2 library.
 Example: `g++ main.cpp  -lSDL2 -lvulkan`
+
+## Render Engine
+
+The actual Vulkan implementation of our render engine can be found here, if of interest: https://github.com/napframework/nap/tree/main/modules/naprender/src, including support for MSAA, multiple windows and render targets.
