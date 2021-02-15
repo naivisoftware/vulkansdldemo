@@ -40,7 +40,7 @@ const std::set<std::string>& getRequestedLayerNames()
     if (layers.empty())
     {
         layers.emplace("VK_LAYER_NV_optimus");
-        layers.emplace("VK_LAYER_LUNARG_standard_validation");
+        layers.emplace("VK_LAYER_KHRONOS_validation");
     }
     return layers;
 }
@@ -813,11 +813,12 @@ SDL_Window* createWindow()
 /**
  *  Destroys the vulkan instance
  */
-void quit(VkInstance instance, VkDevice device, VkDebugReportCallbackEXT callback, VkSwapchainKHR chain)
+void quit(VkInstance instance, VkDevice device, VkDebugReportCallbackEXT callback, VkSwapchainKHR chain, VkSurfaceKHR presentation_surface)
 {
     vkDestroySwapchainKHR(device, chain, nullptr);
     vkDestroyDevice(device, nullptr);
     destroyDebugReportCallbackEXT(instance, callback, nullptr);
+    vkDestroySurfaceKHR(instance, presentation_surface, nullptr);
     vkDestroyInstance(instance, nullptr);
     SDL_Quit();
 }
@@ -913,7 +914,7 @@ int main(int argc, char *argv[])
     }
 
     // Destroy Vulkan Instance
-    quit(instance, device, callback, swap_chain);
+    quit(instance, device, callback, swap_chain, presentation_surface);
 
     return 1;
 }
