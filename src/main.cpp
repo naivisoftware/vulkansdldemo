@@ -459,7 +459,7 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
     std::vector<float> queue_prio = { 1.0f };
     queue_create_info.pQueuePriorities = queue_prio.data();
     queue_create_info.pNext = NULL;
-    queue_create_info.flags = NULL;
+    queue_create_info.flags = 0;
 
     // Device creation information
     VkDeviceCreateInfo create_info;
@@ -472,7 +472,7 @@ bool createLogicalDevice(VkPhysicalDevice& physicalDevice,
     create_info.enabledExtensionCount = static_cast<uint32_t>(device_property_names.size());
     create_info.pNext = NULL;
     create_info.pEnabledFeatures = NULL;
-    create_info.flags = NULL;
+    create_info.flags = 0;
 
     // Finally we're ready to create a new device
     VkResult res = vkCreateDevice(physicalDevice, &create_info, nullptr, &outDevice);
