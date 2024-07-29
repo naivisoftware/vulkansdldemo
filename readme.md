@@ -30,4 +30,4 @@ Example: `g++ main.cpp  -lSDL2 -lvulkan`
 
 ## Render Engine
 
-The actual Vulkan implementation of our render engine can be found [here](https://github.com/napframework/nap/tree/main/modules/naprender/src), if of interest, including support for multiple windows, render targets, updating of uniforms and samplers at runtime, compilation of GLSL shaders, loading of Geometry, MSAA etc. 
+The actual Vulkan implementation of our render engine can be found [here](https://github.com/napframework/nap), if of interest, including support for multiple windows, render targets, updating of uniforms and samplers at runtime, compilation of GLSL shaders, loading of Geometry, MSAA etc. 
